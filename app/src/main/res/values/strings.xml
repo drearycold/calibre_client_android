@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">My Application</string>
+    <string name="editCalibreServer">Calibre Server</string>
+    <string name="button_send">Send</string>
+    <string name="textview">TextView</string>
+    <string name="sync_button">Sync</string>
+    <string name="btnUpdateLibrary">Update</string>
+    <string name="btnCancelUpdateLibrary">Cancel</string>
+    <string name="editCalibreServerDefaultValue">http://calibre-server.lan:8080/</string>
+    <string name="editTextLibrary">Library:</string>
+    <string name="textMainLibrary">Library:</string>
+    <string name="textMainOrderBy">Order By:</string>
+    <string name="radioMainBookAsList">List</string>
+    <string name="radioMainBookAsGrid">Grid</string>
+    <string name="textMainBookSearch">Search:</string>
+    <string name="bookTitleDefault">Untitled</string>
+    <string name="bookAuthorsDefault">Unknown</string>
+</resources>
