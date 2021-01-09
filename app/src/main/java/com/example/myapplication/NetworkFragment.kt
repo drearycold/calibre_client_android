@@ -23,6 +23,7 @@ internal const val CALIBRE_CMD_Get_Library_List = "GetLibraryList"
 internal const val CALIBRE_CMD_Get_Library_Books = "GetLibraryBooks"
 internal const val CALIBRE_CMD_Get_Book = "GetBook"
 internal const val CALIBRE_CMD_Get_Book_Cover = "GetBookCover"
+internal const val CALIBRE_CMD_Set_Metadata = "SetMetadata"
 
 open class NetworkFragment : Fragment() {
     private var callback: DownloadCallback<DownloadCallbackData>? = null
@@ -118,6 +119,7 @@ open class NetworkFragment : Fragment() {
             var resultValue: String? = null
             var exception: Exception? = null
             var dataValue: ByteBuffer? = null
+            var code: Int? = 0
 
             constructor(resultValue: String) {
                 this.resultValue = resultValue
@@ -172,16 +174,15 @@ open class NetworkFragment : Fragment() {
          */
         override fun onPostExecute(result: Result?) {
             callback?.apply {
+                var data = DownloadCallbackData()
+                data.code = result?.code ?: 0
+                data.command = fragment?.cmdString
                 result?.exception?.also { exception ->
-                    var data = DownloadCallbackData()
-                    data.command = fragment?.cmdString
                     data.result = exception.message
                     updateFromDownload(data)
                     return
                 }
                 result?.resultValue?.also { resultValue ->
-                    var data = DownloadCallbackData()
-                    data.command = fragment?.cmdString
                     data.result = resultValue
                     updateFromDownload(data)
                     return
@@ -241,19 +242,23 @@ open class NetworkFragment : Fragment() {
                     }
                     // Retrieve the response body as an InputStream.
                     //publishProgress(GET_INPUT_STREAM_SUCCESS, 0)
-                    when(fragment?.arguments?.getBoolean(BINARY_KEY, false)) {
-                        true -> inputStream?.let { stream ->
-                            // Converts Stream to String with max length of 500.
-                            readStreamBytes(stream, 5000000)?.let {
-                                Result(it)
+                    inputStream?.let { stream ->
+                        when (fragment?.arguments?.getBoolean(BINARY_KEY, false)) {
+                            true -> {
+                                // Converts Stream to String with max length of 500.
+                                readStreamBytes(stream, 5000000)?.let {
+                                    Result(it)
+                                }
+                            }
+                            else -> {
+                                // Converts Stream to String with max length of 500.
+                                readStream(stream, 5000000)?.let {
+                                    Result(it)
+                                }
                             }
                         }
-                        else -> inputStream?.let { stream ->
-                            // Converts Stream to String with max length of 500.
-                            readStream(stream, 5000000)?.let {
-                                Result(it)
-                            }
-                        }
+                    }?.also {
+                        it.code = connection.responseCode
                     }
                 }
             } finally {

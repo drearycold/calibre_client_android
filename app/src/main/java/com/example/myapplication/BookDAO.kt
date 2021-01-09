@@ -14,7 +14,7 @@ interface BookDAO {
     suspend fun findByName(title: String): Book
 
     @Query("SELECT * FROM book WHERE id = (:id) AND libraryName = (:libraryName)")
-    suspend fun find(id: Int, libraryName: String): Book
+    suspend fun find(id: Int, libraryName: String): Book?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(vararg books: Book)

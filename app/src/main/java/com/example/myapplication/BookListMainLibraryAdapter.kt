@@ -57,7 +57,15 @@ class BookListMainLibraryAdapter (private val mainActivity: MainActivity): Recyc
         holder.titleTextView.text = book.title
         holder.authorTextView.text = book.authors
         holder.pageCountTextView.text = book.pages.toString()
-        holder.progressTextView.text = "0%"
+        holder.progressTextView.apply {
+            val readPos = book.readPos[mainActivity.deviceName]
+            if( readPos != null && book.pages > 0) {
+                val pos = (readPos.toDouble() * 100 / book.pages).toInt()
+                "$pos%".also { text = it }
+            } else {
+                text = ""
+            }
+        }
 
         var coverURL = StringBuilder(256)
         coverURL.append( mainActivity.findViewById<EditText>(R.id.editCalibreServer).text.toString() )
@@ -67,7 +75,7 @@ class BookListMainLibraryAdapter (private val mainActivity: MainActivity): Recyc
         )
 
         holder.itemView.setOnClickListener {
-            mainActivity.onBookRowClicked(book)
+            mainActivity.onBookRowClicked(position)
         }
 
         logger.info("onBindViewHolder pos:$position text:${book.title}")
