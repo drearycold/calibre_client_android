@@ -48,8 +48,6 @@ data class Book(
 
     var pages = 0
 
-    var readPos = HashMap<String, String>()    //TODO type -> something
-        set(other: HashMap<String, String>) {
-            field.putAll(other)
-        }
+    var readPos = BookReadingPosition()
+
 }

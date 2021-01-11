@@ -15,4 +15,5 @@
     <string name="textMainBookSearch">Search:</string>
     <string name="bookTitleDefault">Untitled</string>
     <string name="bookAuthorsDefault">Unknown</string>
+    <string name="checkbox">Downloaded</string>
 </resources>

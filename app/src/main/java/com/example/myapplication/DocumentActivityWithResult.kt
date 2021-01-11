@@ -34,6 +34,7 @@ class DocumentActivityWithResult: DocumentActivity() {
         val sep = pageNumber.indexOf(" / ")
 
         intent.putExtra(EXTRA_READER_PAGE_NUMBER, pageNumber.substring(0, sep).toInt())
+        intent.putExtra(EXTRA_READER_PAGE_NUMBER_MAX, pageNumber.substring(sep + 3, pageNumber.length).toInt())
         setResult(RESULT_OK, intent)
         finish()
 

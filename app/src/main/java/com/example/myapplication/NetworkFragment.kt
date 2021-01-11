@@ -24,6 +24,7 @@ internal const val CALIBRE_CMD_Get_Library_Books = "GetLibraryBooks"
 internal const val CALIBRE_CMD_Get_Book = "GetBook"
 internal const val CALIBRE_CMD_Get_Book_Cover = "GetBookCover"
 internal const val CALIBRE_CMD_Set_Metadata = "SetMetadata"
+internal const val CALIBRE_CMD_Get_Book_File = "GetBookFile"
 
 open class NetworkFragment : Fragment() {
     private var callback: DownloadCallback<DownloadCallbackData>? = null
@@ -187,7 +188,7 @@ open class NetworkFragment : Fragment() {
                     updateFromDownload(data)
                     return
                 }
-                finishDownloading()
+                finishDownloading(data)
             }
         }
 

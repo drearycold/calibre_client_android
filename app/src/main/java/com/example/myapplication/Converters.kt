@@ -30,4 +30,10 @@ class Converters {
         val listType = object : TypeToken<ArrayList<String?>?>(){}.type
         return Gson().fromJson<ArrayList<String?>>(value, listType)
     }
+
+    @TypeConverter
+    fun fromBookReadingPosition(bookReadingPosition: BookReadingPosition): String? = Gson().toJson(bookReadingPosition)
+
+    @TypeConverter
+    fun toBookReadingPosition(value: String): BookReadingPosition? = Gson().fromJson(value, BookReadingPosition::class.java)
 }

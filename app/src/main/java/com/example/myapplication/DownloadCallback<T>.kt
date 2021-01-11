@@ -31,6 +31,6 @@ interface DownloadCallback<T> {
      * Indicates that the download operation has finished. This method is called even if the
      * download hasn't completed successfully.
      */
-    fun finishDownloading()
+    fun finishDownloading(result: T?)
 
 }

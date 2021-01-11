@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkInfo
 import android.os.Bundle
@@ -35,6 +36,8 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
 
     private var calibreServer: String = ""
 
+    private lateinit var mLibraryListSpinner: Spinner
+
     private lateinit var dbMetadata: AppDatabase
     private lateinit var bookViewModel: BookViewModel
 
@@ -65,19 +68,19 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
             mBooks[libraryName] = ArrayList()
         }
 
-        val spinner = findViewById<Spinner>(R.id.spSyncLibraryList)
+        mLibraryListSpinner = findViewById<Spinner>(R.id.spSyncLibraryList)
         ArrayAdapter<Library>(this,
             android.R.layout.simple_spinner_item,
             libraryList
         ).also { adapter ->
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            spinner.adapter = adapter
-            spinner.setSelection(libraryList.indexOf(Library(libraryInfo.defaultLibrary)))
+            mLibraryListSpinner.adapter = adapter
+            mLibraryListSpinner.setSelection(libraryList.indexOf(Library(libraryInfo.defaultLibrary)))
         }
 
         mBooksSelected = mBooks[libraryInfo.defaultLibrary]!!
 
-        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener{
+        mLibraryListSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener{
             override fun onNothingSelected(parent: AdapterView<*>?) {
                 //do nothing
             }
@@ -231,7 +234,7 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
     }
 
     override fun updateFromDownload(result: DownloadCallbackData?) {
-        logger.info("updateFromDownload: $result")
+        logger.info("updateFromDownload: ${result?.command} ${result?.code} ${result?.result.toString()}")
         syncing = false
 
         when(result?.command) {
@@ -263,9 +266,30 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
         }
     }
 
-    override fun finishDownloading() {
-        syncing = false
-        networkFragment.cancelDownload()
+    override fun finishDownloading(result: DownloadCallbackData?) {
+        result?.let {
+            when(result?.command) {
+                CALIBRE_CMD_Get_Library_Books -> result.result?.let {
+                    syncing = false
+                }
+                else -> {
+                    //do nothing
+                }
+            }
+            networkFragment.cancelDownload()
+        }
     }
 
+    override fun onBackPressed() {
+        var intent = Intent()
+        intent.putExtras(this.intent)
+        mLibraryListSpinner.selectedItem?.let {
+            intent.putExtra(EXTRA_SYNCING_LIBRARY_NAME, (it as Library).name)
+        }
+
+        setResult(RESULT_OK, intent)
+        finish()
+
+        super.onBackPressed()
+    }
 }
