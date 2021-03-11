@@ -6,147 +6,110 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <Button
-        android:id="@+id/button"
-        android:layout_width="wrap_content"
-        android:layout_height="48dp"
-        android:layout_marginStart="16dp"
+    <LinearLayout
+        android:id="@+id/layoutLibrary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
         android:layout_marginTop="16dp"
-        android:layout_marginEnd="24dp"
-        android:onClick="sendMessage"
-        android:text="@string/button_send"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintStart_toEndOf="@+id/editCalibreServer"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <EditText
-        android:id="@+id/editCalibreServer"
-        android:layout_width="0dp"
-        android:layout_height="48dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="16dp"
-        android:autofillHints="https://"
-        android:ems="10"
-        android:hint="@string/editCalibreServer"
-        android:inputType="textUri"
-        app:layout_constraintEnd_toStartOf="@+id/button"
-        app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <Spinner
-        android:id="@+id/spLibraryListMain"
-        android:layout_width="0dp"
-        android:layout_height="24dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="24dp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/textMainLibrary"
-        app:layout_constraintTop_toBottomOf="@+id/editCalibreServer" />
-
-    <Spinner
-        android:id="@+id/spBookListOrderBy"
-        android:layout_width="0dp"
-        android:layout_height="24dp"
-        android:layout_marginTop="4dp"
-        app:layout_constraintEnd_toStartOf="@+id/radioGroup"
-        app:layout_constraintStart_toEndOf="@+id/textMainOrderBy"
-        app:layout_constraintTop_toBottomOf="@+id/editTextMainBookSearch" />
-
-    <TextView
-        android:id="@+id/textMainLibrary"
-        android:layout_width="64dp"
-        android:layout_height="28dp"
-        android:layout_marginStart="24dp"
-        android:layout_marginTop="8dp"
-        android:text="@string/textMainLibrary"
-        android:textSize="16sp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/editCalibreServer" />
-
-    <TextView
-        android:id="@+id/textMainOrderBy"
-        android:layout_width="64dp"
-        android:layout_height="28dp"
-        android:layout_marginStart="24dp"
-        android:layout_marginTop="4dp"
-        android:text="@string/textMainOrderBy"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/editTextMainBookSearch"
-        tools:textSize="16sp" />
-
-    <RadioGroup
-        android:id="@+id/radioGroup"
-        android:layout_width="wrap_content"
-        android:layout_height="24dp"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="24dp"
-        android:checkedButton="@id/radioMainBookAsList"
+        android:layout_marginEnd="8dp"
         android:orientation="horizontal"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/spBookListOrderBy"
-        app:layout_constraintTop_toBottomOf="@+id/editTextMainBookSearch">
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
 
-        <RadioButton
-            android:id="@+id/radioMainBookAsList"
+        <TextView
+            android:id="@+id/textMainLibrary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/radioMainBookAsList" />
+            android:minWidth="64dp"
+            android:text="@string/textMainLibrary"
+            android:textSize="16sp" />
 
-        <RadioButton
-            android:id="@+id/radioMainBookAsGrid"
+        <Spinner
+            android:id="@+id/spLibraryListMain"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/radioMainBookAsGrid" />
-    </RadioGroup>
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
 
-    <EditText
-        android:id="@+id/editTextMainBookSearch"
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layoutOrder"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="24dp"
-        android:ems="10"
-        android:imeOptions="actionSearch"
-        android:inputType="text"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/textMainBookSearch"
-        app:layout_constraintTop_toBottomOf="@+id/spLibraryListMain"
-        android:autofillHints="" />
-
-    <TextView
-        android:id="@+id/textMainBookSearch"
-        android:layout_width="64dp"
-        android:layout_height="28dp"
-        android:layout_marginStart="24dp"
+        android:layout_marginStart="8dp"
         android:layout_marginTop="16dp"
-        android:text="@string/textMainBookSearch"
-        android:textSize="16sp"
+        android:layout_marginEnd="8dp"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/textMainLibrary" />
+        app:layout_constraintTop_toBottomOf="@+id/layoutLibrary">
+
+        <TextView
+            android:id="@+id/textMainOrderBy"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="64dp"
+            android:text="@string/textMainOrderBy"
+            tools:textSize="16sp" />
+
+        <Spinner
+            android:id="@+id/spBookListOrderBy"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layoutSearch"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/layoutOrder">
+
+        <TextView
+            android:id="@+id/textMainBookSearch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="64dp"
+            android:text="@string/textMainBookSearch"
+            android:textSize="16sp" />
+
+        <EditText
+            android:id="@+id/editTextMainBookSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints=""
+            android:imeOptions="actionSearch"
+            android:inputType="text" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/layoutCheckFilters"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
+        android:layout_marginStart="8dp"
         android:layout_marginTop="8dp"
-        android:layout_marginEnd="24dp"
+        android:layout_marginEnd="8dp"
         android:gravity="end"
         android:orientation="horizontal"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.0"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/spBookListOrderBy">
+        app:layout_constraintTop_toBottomOf="@+id/layoutSearch">
 
         <CheckBox
             android:id="@+id/cbStarted"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_weight="0"
-            android:text="CheckBox" />
+            android:text="Reading" />
 
         <CheckBox
             android:id="@+id/cbDownloaded"
@@ -154,7 +117,22 @@
             android:layout_height="wrap_content"
             android:layout_weight="0"
             android:text="@string/checkbox" />
+
     </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvMainBookList"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"
+        android:scrollbars="vertical"
+        app:layout_constraintBottom_toTopOf="@+id/linearLayout3"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/layoutCheckFilters" />
 
     <ProgressBar
         android:id="@+id/mainBookListUpdateProgressBar"
@@ -167,18 +145,60 @@
         app:layout_constraintStart_toStartOf="@+id/rvMainBookList"
         app:layout_constraintTop_toTopOf="@+id/rvMainBookList" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvMainBookList"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
+    <LinearLayout
+        android:id="@+id/linearLayout3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
-        android:layout_marginTop="8dp"
         android:layout_marginEnd="16dp"
-        android:layout_marginBottom="16dp"
-        android:scrollbars="vertical"
+        android:layout_marginBottom="8dp"
+        android:orientation="horizontal"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/layoutCheckFilters" />
+        app:layout_constraintStart_toStartOf="parent">
+
+        <Space
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/showShelfButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="0"
+            android:onClick="onShowShelfButtonClicked"
+            android:text="BookShelf" />
+
+        <Space
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="0.2" />
+
+        <Button
+            android:id="@+id/showLibraryButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="0"
+            android:onClick="onShowLibraryButtonClicked"
+            android:text="Library" />
+
+        <Space
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="0.2" />
+
+        <Button
+            android:id="@+id/btnConnectServer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:onClick="sendMessage"
+            android:text="@string/button_send" />
+
+        <Space
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

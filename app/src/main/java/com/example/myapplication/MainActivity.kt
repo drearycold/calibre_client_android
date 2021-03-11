@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkInfo
 import android.net.Uri
-import android.os.AsyncTask
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Base64
@@ -14,23 +13,26 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.room.Room
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import org.geometerplus.zlibrary.ui.android.library.ZLAndroidApplication
 import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URLConnection
-import java.util.*
+import java.io.InputStreamReader
 import java.util.logging.Logger
+import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
 
 
 const val EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE"
 const val EXTRA_DEVICE_NAME = "com.example.myfirstapp.DEVICE_NAME"
 const val EXTRA_DEVICE_NAME_DEFAULT = "My Device"
-const val CALIBRE_SERVER = "com.example.myfirstapp.CALIBRE_SERVER"
+const val EXTRA_CALIBRE_SERVER = "com.example.myfirstapp.CALIBRE_SERVER"
+const val EXTRA_SHELF_MODE = "com.example.myfirstapp.shelfmode"
 const val ORDER_BY_TITLE = "Title"
 const val ORDER_BY_LASTREAD = "LastRead"
 const val ORDER_BY_PROGRESS = "Progress"
@@ -38,20 +40,28 @@ const val ORDER_BY_PAGES = "Pages"
 
 const val PREF_KEY_SELECTED_LIBRARY_NAME = "MainActivitySelectedLibraryName"
 
-const val EXTRA_SYNCING_LIBRARY_NAME = "syncing_libraryname"
+const val EXTRA_LIBRARY_NAME = "extra_libraryname"
 const val EXTRA_READER_BOOK_ID = "mupdf_bookid"
-const val EXTRA_READER_LIBRARY_NAME = "mupdf_libraryname"
 const val EXTRA_READER_PAGE_NUMBER = "mupdf_pagenumber"
 const val EXTRA_READER_PAGE_NUMBER_MAX = "mupdf_pagenumbermax"
+const val EXTRA_READER_POSITION = "android_book_reader_position"
+const val EXTRA_READER_NAME = "mupdf_readername"
+const val EXTRA_READER_NAME_DEFAULT = "MuPDF"
+const val EXTRA_REQUEST_CODE = "myfirstapp.REQUEST_CODE"
 
 const val REQUEST_SYNCING_ACTIVITY_CODE = 10
 const val REQUEST_DOCUMENT_ACTIVITY_CODE = 20
+const val REQUEST_ANDROID_BOOK_READER_ACTIVITY_SHELF_CODE = 30
+const val REQUEST_ANDROID_BOOK_READER_ACTIVITY_BOOK_CODE = 40
+
+const val REQUEST_BY_MAIN_ACTIVITY = 10
+const val REQUEST_BY_BOOK_LIST_ACTIVITY = 20
 
 class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> {
 
     // Keep a reference to the NetworkFragment, which owns the AsyncTask object
     // that is used to execute network ops.
-    private var networkFragment: NetworkFragment? = null
+    var networkFragment: NetworkFragment? = null
 
     // Boolean telling us whether a download is in progress, so we don't trigger overlapping
     // downloads with consecutive button clicks.
@@ -59,35 +69,62 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
 
     private var logger: Logger = Logger.getLogger("MainActivity")
 
-    var mBooks = ArrayList<Book>()
-    private lateinit var mBookListAdapter: BookListMainLibraryAdapter
+    private lateinit var mBookListAdapter: BookListAdapter
 
-    private lateinit var db: AppDatabase
-    private lateinit var bookViewModel: BookViewModel
-    private lateinit var libraryViewModel: LibraryViewModel
+    lateinit var db: AppDatabase
 
-    private lateinit var mEditCalibreServer: EditText
     private lateinit var mSpLibraryListMain: Spinner
-    lateinit var mMainBookListUpdateProgressBar: ProgressBar
+    private lateinit var mOrderBySpinner: Spinner
+    private lateinit var mMainBookListUpdateProgressBar: ProgressBar
+    private lateinit var rvBookList: RecyclerView
 
     private var readingBook: Book? = null
     private var readingBookPosition: Int? = 0
-    lateinit var deviceName: String
 
     private var preferredFormats = ArrayList<String>()
     var formatsComponentIdMap = HashMap<String, Pair<Int, Int>>()
+
+    private var bookListUpdated = MutableLiveData<Boolean>()
+    private var bookListUpdateEnabled = true
+
+    companion object {
+        var DEVICE_NAME: String? = null
+        var libraryViewModel: LibraryViewModel? = null
+        var bookViewModel: BookListViewModel? = null
+
+        fun getBookFormatFile(context: Context, book: Book, format: String): File {
+            return File(
+                context.getExternalFilesDir(null),
+                book.formats[format] ?: "__NOT_EXIST__"
+            )
+        }
+
+        fun isBookFormatDownloaded(context: Context, book: Book, format: String): Boolean {
+            val bookFile = getBookFormatFile(context, book, format)
+            return bookFile.exists()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        mEditCalibreServer = findViewById(R.id.editCalibreServer)
-        val sharedPreferences = getPreferences(Context.MODE_PRIVATE)
+        val appContext = applicationContext
+        val zlib = object : ZLAndroidApplication() {
+            init {
+                attachBaseContext(appContext)
+                onCreate()
+            }
+        }
+
+
+
+        val sharedPreferences = getPreferences(MODE_PRIVATE)
         sharedPreferences.getString(
             getString(R.string.editCalibreServer),
             getString(R.string.editCalibreServerDefaultValue)
-        ).let {
-            mEditCalibreServer.setText(it)
+        )?.let {
+            BookLibrary.calibreServer = it
         }
 
         mMainBookListUpdateProgressBar =
@@ -98,44 +135,50 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
             AppDatabase::class.java,
             "metadata"
         ).build()
-        bookViewModel = BookViewModel(db.bookDao())
+        bookViewModel = BookListViewModel(db.bookDao())
+        bookListUpdated.observe(this, Observer { updated ->
+            when (updated) {
+                true -> updateBookListFinished()
+                false -> updateBookListStarted()
+            }
+        })
         libraryViewModel = LibraryViewModel(db.libraryDao())
 
-        val rvBookList = findViewById<View>(R.id.rvMainBookList) as RecyclerView
-        mBookListAdapter = BookListMainLibraryAdapter(this)
+        rvBookList = findViewById<View>(R.id.rvMainBookList) as RecyclerView
+        mBookListAdapter = BookListAdapter(this)
         rvBookList.adapter = mBookListAdapter
         rvBookList.layoutManager = LinearLayoutManager(this)
 
+        mBookListAdapter.rowClicked.observe(this, Observer { position ->
+            onBookRowClicked(position)
+        })
+
         val orderByItems =
             arrayOf<String>(ORDER_BY_TITLE, ORDER_BY_LASTREAD, ORDER_BY_PROGRESS, ORDER_BY_PAGES)
-        val orderBySpinner = findViewById<Spinner>(R.id.spBookListOrderBy)
+        mOrderBySpinner = findViewById<Spinner>(R.id.spBookListOrderBy)
         ArrayAdapter<String>(
             this,
             android.R.layout.simple_spinner_item,
             orderByItems
         ).also { adapter ->
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            orderBySpinner.adapter = adapter
-            orderBySpinner.setSelection(1)
+            mOrderBySpinner.adapter = adapter
+            mOrderBySpinner.setSelection(1)
         }
 
         findViewById<EditText>(R.id.editTextMainBookSearch).setOnEditorActionListener() { v, actionId, event ->
             when (actionId) {
                 EditorInfo.IME_ACTION_SEARCH -> {
-                    bookViewModel.updateBookListRV(
-                        this,
-                        findViewById<Spinner>(R.id.spLibraryListMain).selectedItem.toString(),
-                        v.text, orderBySpinner.selectedItem as String
-                    )
+                    updateBookList()
                     v.clearFocus()
-                    (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                    (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
                         .hideSoftInputFromWindow(v.windowToken, 0)
                     true
                 }
                 else -> false
             }
         }
-        mSpLibraryListMain = findViewById<Spinner>(R.id.spLibraryListMain)
+        mSpLibraryListMain = findViewById(R.id.spLibraryListMain)
         mSpLibraryListMain.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
                 override fun onNothingSelected(parent: AdapterView<*>?) {
@@ -149,15 +192,18 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
                     id: Long
                 ) {
                     updateBookList()
-                    val sharedPref = getPreferences(Context.MODE_PRIVATE)
+                    val sharedPref = getPreferences(MODE_PRIVATE)
                     with(sharedPref.edit()) {
-                        putString(PREF_KEY_SELECTED_LIBRARY_NAME, mSpLibraryListMain.selectedItem.toString())
+                        putString(
+                            PREF_KEY_SELECTED_LIBRARY_NAME,
+                            mSpLibraryListMain.selectedItem.toString()
+                        )
                         apply()
                     }
                 }
             }
 
-        orderBySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        mOrderBySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent: AdapterView<*>?) {
                 //do nothing
             }
@@ -173,32 +219,68 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
         }
         networkFragment = NetworkFragment.getInstance(supportFragmentManager)
 
-        libraryViewModel.updateLibrarySpinner(
-            this,
-            sharedPreferences.getString(PREF_KEY_SELECTED_LIBRARY_NAME, null)
-        )
+        libraryViewModel?.let {
+            it.updateLibrarySpinner(
+                this,
+                sharedPreferences.getString(PREF_KEY_SELECTED_LIBRARY_NAME, null)
+            )
+        }
 
-        deviceName =
+        DEVICE_NAME =
             Settings.Global.getString(applicationContext.contentResolver, "device_name")
 
         preferredFormats.add("PDF")
         formatsComponentIdMap["PDF"] = Pair(R.id.imagePdfIcon, R.id.pbPdfDownload)
         preferredFormats.add("EPUB")
         formatsComponentIdMap["EPUB"] = Pair(R.id.imageEpubIcon, R.id.pbEpubDownload)
+
+        mSpLibraryListMain.requestFocus()
+
     }
 
     fun updateBookList() {
         mSpLibraryListMain.selectedItem?.let {
-            bookViewModel.updateBookListRV(
-                this,
+            if (!bookListUpdateEnabled)
+                return
+
+            var searchStr = findViewById<EditText>(R.id.editTextMainBookSearch).text
+            var recentDay = 7
+            if( searchStr.isNotBlank() )
+                recentDay = 0
+            bookViewModel?.updateBookListRV(
+                mBookListAdapter,
+                bookListUpdated,
                 it.toString(),
-                "",
-                findViewById<Spinner>(R.id.spBookListOrderBy).selectedItem as String
+                searchStr,
+                mOrderBySpinner.selectedItem as String,
+                recentDay
             )
         }
     }
 
+    private fun enableUpdateBookList() {
+        mOrderBySpinner.isEnabled = true
+        mSpLibraryListMain.isEnabled = true
+
+        bookListUpdateEnabled = true
+    }
+
+    private fun disableUpdateBookList() {
+        bookListUpdateEnabled = false
+
+        mOrderBySpinner.isEnabled = false
+        mSpLibraryListMain.isEnabled = false
+    }
+
+    fun updateBookListStarted() {
+        mMainBookListUpdateProgressBar.visibility = View.VISIBLE
+        disableUpdateBookList()
+    }
+
     fun updateBookListFinished() {
+        BookLibrary.update(mBookListAdapter.currentList)
+        mMainBookListUpdateProgressBar.visibility = View.GONE
+        enableUpdateBookList()
     }
 
     private fun startDownload() {
@@ -214,14 +296,13 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
     fun sendMessage(view: View) {
         logger.info("enter sendMessage()")
 
-        val calibreServer = mEditCalibreServer.text.toString()
         val sharedPref = getPreferences(Context.MODE_PRIVATE)
         with(sharedPref.edit()) {
-            putString(getString(R.string.editCalibreServer), calibreServer)
+            putString(getString(R.string.editCalibreServer), BookLibrary.calibreServer)
             apply()
         }
 
-        val url = mEditCalibreServer.text.toString() + "/ajax/library-info"
+        val url = BookLibrary.calibreServer + "/ajax/library-info"
 
         val args = Bundle()
         args.putString(URL_KEY, url)
@@ -237,7 +318,7 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
         when (result?.command) {
             CALIBRE_CMD_Get_Library_List -> Intent(this, DisplayMessageActivity::class.java).apply {
                 putExtra(EXTRA_MESSAGE, result?.result as String)
-                putExtra(CALIBRE_SERVER, mEditCalibreServer.text.toString())
+                putExtra(EXTRA_CALIBRE_SERVER, BookLibrary.calibreServer)
                 startActivityForResult(this, REQUEST_SYNCING_ACTIVITY_CODE)
                 downloading = false
             }
@@ -245,7 +326,12 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
                 when (result.code) {
                     200 -> {
                         readingBook?.let { book ->
-                            bookViewModel.updateBookFromMetadata(it as String, book)
+                            bookViewModel?.updateBookFromMetadata(it as String, book)
+                        }
+                        readingBookPosition?.let { position ->
+                            mBookListAdapter.notifyItemChanged(
+                                position
+                            )
                         }
                     }
                     else -> {
@@ -284,68 +370,11 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
                 downloading = false
                 networkFragment?.cancelDownload()
             }
-            CALIBRE_CMD_Get_Book_File -> {
-                mBookListAdapter.apply {
-                    clearDownloading()
-                    readingBookPosition?.let { notifyItemChanged(it) }
-                }
-            }
         }
     }
 
-    private class DownloadFile(
-        val callback: DownloadCallback<DownloadCallbackData>,
-        val mContext: Context,
-        val mFilename: String
-    ) : AsyncTask<String?, Void?, DownloadCallbackData?>() {
-        override fun doInBackground(vararg params: String?): DownloadCallbackData? {
-            var result = DownloadCallbackData()
-            result.command = CALIBRE_CMD_Get_Book_File
-            val imageURL = params[0]
-            var connection: HttpURLConnection? = null
-            try {
-                // Download Image from URL
-                connection = java.net.URL(imageURL).openConnection() as? HttpURLConnection
-            } catch (e: Exception) {
-                e.printStackTrace()
-                result.code = connection?.responseCode ?: -1
-                return result
-            }
 
-            val dir = File(mContext.filesDir, "Books")
-            if (!dir.exists()) {
-                dir.mkdir()
-            }
-            val destination = File(dir, mFilename)
-            try {
-                destination.createNewFile()
-                destination.outputStream().use { fileOutputStream ->
-                    connection?.inputStream?.copyTo(fileOutputStream)
-                    fileOutputStream.flush()
-                    fileOutputStream.close()
-
-                }
-            } catch (e: IOException) {
-                e.printStackTrace()
-            } finally {
-                result.code = connection?.responseCode ?: -1
-            }
-            return result
-        }
-
-        override fun onPostExecute(result: DownloadCallbackData?) {
-            callback.finishDownloading(result)
-        }
-
-    }
-
-    fun onBookRowClicked(position: Int) {
-        val book = mBooks[position]
-        logger.info("BookRowClicked: $book")
-
-        readingBook = book
-        readingBookPosition = position
-
+    fun getPreferredFormat(book: Book): String? {
         var preferredFormat: String? = null
         for (format in preferredFormats) {
             if (book.formats.containsKey(format)) {
@@ -353,30 +382,34 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
                 break
             }
         }
+        return preferredFormat
+    }
 
-        preferredFormat?.let {
-            val bookFile = getBookFormatFile(book, preferredFormat)
-            if (bookFile.exists()) {
-                startReadingBook(position, Uri.fromFile(bookFile))
-            } else {
-                mBookListAdapter.apply {
-                    markDownloading(position, preferredFormat)
-                    notifyItemChanged(position)
-                }
-                DownloadFile(
-                    this,
-                    applicationContext,
-                    "${book.libraryName} - (${book.id}).$it"
-                ).apply {
-                    execute("http://peter-media.lan:8080/get/$it/${book.id}/${book.libraryName}")
-                }
-            }
+    fun onBookRowClicked(position: Int) {
+        val book = mBookListAdapter.currentList[position]
+        logger.info("BookRowClicked: $book")
+
+        readingBook = book
+        readingBookPosition = position
+
+
+        Intent(this, BookDetailActivity::class.java).apply {
+            putExtra(EXTRA_REQUEST_CODE, REQUEST_BY_MAIN_ACTIVITY)
+            putExtra(BookDetailFragment.ARG_ITEM_ID, book.id)
+            putExtra(EXTRA_DEVICE_NAME, DEVICE_NAME)
+            putExtra(EXTRA_LIBRARY_NAME, mSpLibraryListMain.selectedItem.toString())
+            putExtra(EXTRA_CALIBRE_SERVER, BookLibrary.calibreServer)
+        }.also {
+            startActivity(it)
         }
+        return
+
+
     }
 
     fun onBookRowLongClicked(position: Int): Boolean {
         var preferredFormat: String? = null
-        val book = mBooks[position]
+        val book = mBookListAdapter.currentList[position]
         for (format in preferredFormats) {
             if (book.formats.containsKey(format)) {
                 preferredFormat = format
@@ -395,22 +428,20 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
     }
 
     private fun handleSyncingActivityResult(resultCode: Int, data: Intent) {
-        libraryViewModel.updateLibrarySpinner(this, data.getStringExtra(EXTRA_SYNCING_LIBRARY_NAME))
+        libraryViewModel?.updateLibrarySpinner(this, data.getStringExtra(EXTRA_LIBRARY_NAME))
 
     }
 
-    private fun handleDocumentActivityResult(resultCode: Int, data: Intent) {
+    fun handleDocumentActivityResult(resultCode: Int, data: Intent) {
         val pageNumber = data.getIntExtra(EXTRA_READER_PAGE_NUMBER, 0)
         logger.info("pageNumber: $pageNumber")
 
         readingBook?.let { book ->
-            bookViewModel.updateReadingProgress(book, data.extras)
+            bookViewModel?.updateReadingProgress(book, data.extras)
             readingBookPosition?.let { mBookListAdapter?.notifyItemChanged(it) }
 
             val url =
-                mEditCalibreServer.text.toString() + "/cdb/cmd/set_metadata/0?library_id=" + findViewById<Spinner>(
-                    R.id.spLibraryListMain
-                ).selectedItem
+                BookLibrary.calibreServer + "/cdb/cmd/set_metadata/0?library_id=" + mSpLibraryListMain.selectedItem
             val args = Bundle()
             args.putString(URL_KEY, url)
             args.putString(CMD_KEY, CALIBRE_CMD_Set_Metadata)
@@ -439,29 +470,103 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
             REQUEST_DOCUMENT_ACTIVITY_CODE -> data?.let {
                 handleDocumentActivityResult(resultCode, it)
             }
+            REQUEST_ANDROID_BOOK_READER_ACTIVITY_SHELF_CODE -> data?.let {
+
+            }
+            REQUEST_ANDROID_BOOK_READER_ACTIVITY_BOOK_CODE -> data?.let {
+                val pageNumber = it.getIntExtra(EXTRA_READER_PAGE_NUMBER, 0)
+                logger.info("REQUEST_ANDROID_BOOK_READER_ACTIVITY_CODE $pageNumber")
+                handleDocumentActivityResult(resultCode, it)
+            }
         }
     }
 
     private fun startReadingBook(position: Int, uri: Uri) {
-        val book = mBooks[position]
+        val book = mBookListAdapter.currentList[position]
         val intent = Intent(this, DocumentActivityWithResult::class.java)
         intent.action = Intent.ACTION_VIEW
         intent.data = uri
         intent.putExtra(EXTRA_READER_BOOK_ID, book.id)
-        intent.putExtra(EXTRA_READER_LIBRARY_NAME, book.libraryName)
-        intent.putExtra(EXTRA_DEVICE_NAME, deviceName)
-        intent.putExtra(EXTRA_READER_PAGE_NUMBER, book.readPos.getByDevice(deviceName).lastReadPage)
+        intent.putExtra(EXTRA_LIBRARY_NAME, book.libraryName)
+        intent.putExtra(EXTRA_DEVICE_NAME, DEVICE_NAME)
+        intent.putExtra(EXTRA_READER_PAGE_NUMBER, book.readPos.getLastPageProgress())
 
         startActivityForResult(intent, REQUEST_DOCUMENT_ACTIVITY_CODE)
     }
 
-    private fun getBookFormatFile(book: Book, format: String): File {
-        val dir = File(applicationContext.filesDir, "Books")
-        return File(dir, "${book.libraryName} - (${book.id}).$format")
+    private fun startReadingBookByReaderFragment(position: Int, format: String, uri: Uri) {
+        val book = mBookListAdapter.currentList[position]
+
+        val intent = Intent(this, AndroidBookReaderActivity::class.java)
+        intent.action = Intent.ACTION_OPEN_DOCUMENT
+        intent.data = uri
+        intent.putExtra(EXTRA_READER_BOOK_ID, book.id)
+        intent.putExtra(EXTRA_LIBRARY_NAME, book.libraryName)
+        intent.putExtra(EXTRA_DEVICE_NAME, DEVICE_NAME)
+
+        updateAndroidBookReaderPosition(book, format, book.readPos.getLastPosition())
+
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        startActivityForResult(intent, REQUEST_ANDROID_BOOK_READER_ACTIVITY_BOOK_CODE)
     }
 
-    fun isBookFormatDownloaded(book: Book, format: String): Boolean {
+    private fun updateAndroidBookReaderPosition(book: Book, format: String, position: IntArray) {
+        var jsonFile = getBookFormatMetadataFile(book, format)
+        var metadata: AndroidBookReaderActivity.Metadata
+        if (!jsonFile.exists()) {
+            jsonFile.createNewFile()
+            metadata = AndroidBookReaderActivity.Metadata()
+            metadata.title = book.title
+            metadata.authors = book.authors
+        } else {
+            metadata = Gson().fromJson(
+                InputStreamReader(jsonFile.inputStream()),
+                AndroidBookReaderActivity.Metadata::class.java
+            )
+        }
+        metadata.position = position
+        var writer = jsonFile.writer()
+        GsonBuilder().setPrettyPrinting().create().toJson(metadata, writer)
+
+        writer.flush()
+        writer.close()
+    }
+
+    private fun getBookFormatMetadataFile(book: Book, format: String): File {
         val bookFile = getBookFormatFile(book, format)
-        return bookFile.exists()
+
+        return File(bookFile.parent, bookFile.nameWithoutExtension + ".json")
+    }
+
+    private fun getBookFormatFile(book: Book, format: String): File {
+        return File(
+            applicationContext.getExternalFilesDir(null),
+            book.formats[format] ?: "__NOT_EXIST__"
+        )
+    }
+
+    fun onShowLibraryButtonClicked(view: View) {
+        val intent = Intent(this, BookListActivity::class.java)
+        intent.action = Intent.ACTION_VIEW
+        intent.putExtra(EXTRA_CALIBRE_SERVER, BookLibrary.calibreServer)
+        intent.putExtra(EXTRA_LIBRARY_NAME, mSpLibraryListMain.selectedItem.toString())
+        intent.putExtra(EXTRA_DEVICE_NAME, DEVICE_NAME)
+        startActivity(intent)
+    }
+
+    fun onShowShelfButtonClicked(view: View) {
+        startAndroidBookReaderActivity()
+    }
+
+    private fun startAndroidBookReaderActivity() {
+        val intent = Intent(this, AndroidBookReaderActivity::class.java)
+        intent.action = Intent.ACTION_MAIN
+
+        intent.putExtra(EXTRA_DEVICE_NAME, this.intent.getStringExtra(EXTRA_DEVICE_NAME))
+        intent.putExtra(EXTRA_SHELF_MODE, true)
+
+        //TODO update reading position of every book
+
+        startActivityForResult(intent, REQUEST_ANDROID_BOOK_READER_ACTIVITY_SHELF_CODE)
     }
 }

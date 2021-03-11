@@ -1,29 +1,32 @@
 package com.example.myapplication
 
+import android.app.Activity
 import android.os.Bundle
 import android.util.Base64
-import android.view.View
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.internal.LinkedTreeMap
 import kotlinx.coroutines.launch
-import java.nio.charset.Charset
+import java.io.File
 import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.logging.Logger
 import kotlin.collections.ArrayList
 
-class BookViewModel(private val bookDAO: BookDAO) : ViewModel() {
+class BookListViewModel(private val bookDAO: BookDAO) : ViewModel() {
     private var logger: Logger = Logger.getLogger("BookViewModel")
+
 
     companion object {
         val simpleDateFormatLastModified = SimpleDateFormat(
             //"yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSZ",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ",
             Locale.US
         )     //2020-12-28T07:08:18+00:00
         val simpleDateFormat =
@@ -40,7 +43,7 @@ class BookViewModel(private val bookDAO: BookDAO) : ViewModel() {
         }
     }
 
-    fun updateBook(result: String, libraryName: String) {
+    fun updateBook(result: String, libraryName: String, bookParam: Book? = null) {
         viewModelScope.launch {
             try {
                 val gson = Gson()
@@ -52,20 +55,22 @@ class BookViewModel(private val bookDAO: BookDAO) : ViewModel() {
 
                 val id = bookIds[0].asInt
 
-                var book = bookDAO.find(id, libraryName)
-                if (book == null) {
-                    book = Book(id, libraryName, "", "")
-                }
+                val book =
+                    bookParam ?: bookDAO.find(id, libraryName) ?: Book(id, libraryName, "", "")
 
                 val dataElement = resultElement.get("data").asJsonObject
                 for ((dataKey, dataVal) in gson.fromJson(dataElement, HashMap::class.java)) {
                     val dataValMap = dataVal as LinkedTreeMap<*, *>
                     val innerVal = dataValMap[id.toString()]
                     when (dataKey as String) {
-                        "formats" -> innerVal.let {
+                        "formats" -> innerVal.let { it ->
                             val formats = it as ArrayList<*>
                             for (format in formats) {
-                                book.formats[format as String] = "TODO"
+                                if (!book.formats.containsKey(format as String))
+                                    book.formats[format as String] = "TODO"
+                            }
+                            book.formats.entries.removeAll { f ->
+                                !formats.contains(f.key)
                             }
                         }
                         "comments" -> book.comments = innerVal as? String ?: ""
@@ -113,7 +118,10 @@ class BookViewModel(private val bookDAO: BookDAO) : ViewModel() {
                         "#pages" -> book.pages = (innerVal as? Double)?.toInt() ?: -1
                         "#read_pos" -> innerVal?.let {
                             val readPosStr = String(Base64.decode(innerVal as String, 0))
-                            book.readPos = Gson().fromJson(readPosStr, BookReadingPosition::class.java)
+                            logger.info("readPosStr: $readPosStr")
+                            val readPos =
+                                Gson().fromJson(readPosStr, BookReadingPosition::class.java)
+                            book.updateReadPos(readPos)
                         }
                         "#readability" -> book.readability = innerVal as? Double ?: 0.0
 
@@ -133,7 +141,7 @@ class BookViewModel(private val bookDAO: BookDAO) : ViewModel() {
                 logger.info("\npubDate:\t\t${book.pubDate}\nlastModifed:\t${book.lastModified}\ntimestamp:\t\t${book.timestamp}")
 
                 bookDAO.insertAll(book)
-            } catch( e: Exception) {
+            } catch (e: Exception) {
                 logger.warning("UpdateBook Exception $e")
                 e.printStackTrace()
             } finally {
@@ -143,32 +151,39 @@ class BookViewModel(private val bookDAO: BookDAO) : ViewModel() {
     }
 
     fun updateBookFromMetadata(result: String, book: Book) {
-        viewModelScope.launch {
-            try {
-                val gson = Gson()
-
-                val root = JsonParser.parseString(result)
-                val resultElement = root.asJsonObject.get("result").asJsonObject
-                val vElement = resultElement.get("v").asJsonObject
-                vElement["last_modified"].asJsonObject["v"].asString.let {
-                    val pp = ParsePosition(0)
-                    book.lastModified =
-                        simpleDateFormatLastModified.parse(it, pp) ?: Date()
-                    if (pp.errorIndex > 0) {
-                        pp.index = 0
-                        pp.errorIndex = 0
-                        book.lastModified =
-                            simpleDateFormat.parse(it, pp) ?: Date()
-                    }
+        try {
+            val root = JsonParser.parseString(result)
+            val resultElement = root.asJsonObject.get("result").asJsonObject
+            val vElement = resultElement.get("v").asJsonObject
+            vElement["last_modified"].asJsonObject["v"].asString.let {
+                val pp = ParsePosition(0)
+                book.lastModified = simpleDateFormatLastModified.parse(it, pp) ?: Date()
+                if (pp.errorIndex > 0) {
+                    pp.index = 0
+                    pp.errorIndex = 0
+                    book.lastModified = simpleDateFormat.parse(it, pp) ?: Date()
                 }
-
-                bookDAO.insertAll(book)
-            } catch( e: Exception) {
-                logger.warning("UpdateBook Exception $e")
-                e.printStackTrace()
-            } finally {
-                //TODO notify user
             }
+            try {
+                val userMetadataElement = vElement["user_metadata"].asJsonObject
+                val readPosElement = userMetadataElement["#read_pos"].asJsonObject
+                val readPosValue = readPosElement["#value#"].asString
+                val readPos = Gson().fromJson(
+                    String(Base64.decode(readPosValue, 0)),
+                    BookReadingPosition::class.java
+                )
+                book.updateReadPos(readPos)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } catch (e: Exception) {
+            logger.warning("UpdateBook Exception $e")
+            e.printStackTrace()
+        } finally {
+            //TODO notify user
+        }
+        viewModelScope.launch {
+            bookDAO.insertAll(book)
         }
     }
 
@@ -177,47 +192,66 @@ class BookViewModel(private val bookDAO: BookDAO) : ViewModel() {
     }
 
     fun updateBookListRV(
-        activity: MainActivity,
+        adapter: ListAdapter<Book, *>,
+        bookListUpdated: MutableLiveData<Boolean>,
         libraryName: String,
         searchStr: CharSequence,
-        orderBy: String
+        orderBy: String,
+        recentDay: Int = 0
     ) {
         viewModelScope.launch {
-            activity.mMainBookListUpdateProgressBar.visibility = View.VISIBLE
+            bookListUpdated.value = false
 
-            var bookList = bookDAO.findByLibrary(libraryName)
+            val nanoTimeStart = System.nanoTime()
+            logger.info("findByLibrary Start: $nanoTimeStart")
+            var bookList = if (recentDay > 0) {
+                val curTime = Calendar.getInstance().time.time
+                bookDAO.findByLibraryRecent(libraryName, curTime - recentDay * 86400000L)
+            } else {
+                bookDAO.findByLibrary(libraryName)
+            }
+            val nanoTimeEnd = System.nanoTime()
+            logger.info("findByLibrary End: $nanoTimeEnd")
+            val elapsedNanoTime = nanoTimeEnd - nanoTimeStart
+            logger.info("findByLibrary elapsedNanoTIme: $elapsedNanoTime ${bookList.size}")
             if (searchStr.isNotEmpty())
                 bookList = bookList.filter { matchBook(it, searchStr) }
             //bookList = bookList.filter { it.title.length > 150 }
-            val adapter =
-                activity.findViewById<RecyclerView>(R.id.rvMainBookList).adapter as BookListMainLibraryAdapter
             val bookListSorted = when (orderBy) {
                 ORDER_BY_TITLE -> bookList.sortedBy { it.title }
                 ORDER_BY_LASTREAD -> bookList.sortedByDescending { it.lastModified }
                 ORDER_BY_PAGES -> bookList.sortedByDescending { it.pages }
                 else -> bookList
             }
-            adapter.replaceAllBooks(bookListSorted)
-            adapter.notifyDataSetChanged()
 
-            activity.mMainBookListUpdateProgressBar.visibility = View.GONE
+            adapter.submitList(bookListSorted) { bookListUpdated.value = true }
         }
     }
 
     fun updateReadingProgress(book: Book, extras: Bundle?) {
         extras?.let {
-            val bookId = it.getInt(EXTRA_READER_BOOK_ID)
-            val libraryName = it.getString(EXTRA_READER_LIBRARY_NAME, "")
             val pageNumber = it.getInt(EXTRA_READER_PAGE_NUMBER)
             val deviceName = it.getString(EXTRA_DEVICE_NAME, EXTRA_DEVICE_NAME_DEFAULT)
+            val readerName = it.getString(EXTRA_READER_NAME, EXTRA_READER_NAME_DEFAULT)
 
-            val oldPos = book.readPos.getByDevice(deviceName)
+            val oldPos = book.readPos.getByDevice(deviceName, readerName)
             oldPos.maxPage = extras.getInt(EXTRA_READER_PAGE_NUMBER_MAX, -1)
+
             if (pageNumber > oldPos.furthestReadPage) {
                 oldPos.furthestReadPage = pageNumber
             }
             oldPos.lastReadPage = pageNumber
-            oldPos.readerName = "MuPDF"
+
+            val newPosition = extras.getIntArray(EXTRA_READER_POSITION) ?: IntArray(3)
+            oldPos.lastPosition = newPosition
+            if (oldPos.furthestPosition == null)
+                oldPos.furthestPosition = newPosition
+            else if (oldPos.furthestPosition[0] < newPosition[0] ||
+                oldPos.furthestPosition[0] == newPosition[0] && oldPos.furthestPosition[1] < newPosition[1] ||
+                oldPos.furthestPosition[0] == newPosition[0] && oldPos.furthestPosition[0] < newPosition[0] && oldPos.furthestPosition[2] == newPosition[2]
+            ) {
+                oldPos.furthestPosition = newPosition
+            }
 
             viewModelScope.launch {
                 bookDAO.insertAll(book)

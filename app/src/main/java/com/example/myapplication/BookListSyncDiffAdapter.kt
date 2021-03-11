@@ -5,14 +5,18 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import java.util.*
 import java.util.logging.Logger
 
-class BookListSyncDiffAdapter (private var mBooks: MutableList<Book>): RecyclerView.Adapter<BookListSyncDiffAdapter.ViewHolder>() {
+class BookListSyncDiffAdapter (private var mBooks: MutableList<DisplayMessageActivity.SyncDiffBook>): RecyclerView.Adapter<BookListSyncDiffAdapter.ViewHolder>() {
 
-    private val logger : Logger = Logger.getLogger("BookListAdapter")
+    private val logger = Logger.getLogger("BookListAdapter")
+    private val dateFormat = java.text.DateFormat.getDateInstance()
 
     inner class ViewHolder(listItemView: View) : RecyclerView.ViewHolder(listItemView) {
-        val titleTextView: TextView = itemView.findViewById<TextView>(R.id.textSyncDiffBookTitle)
+        val titleTextView: TextView = itemView.findViewById(R.id.textSyncDiffBookTitle)
+        val authorsTextView: TextView = itemView.findViewById(R.id.textSyncDiffBookAuthors)
+        val lastModifiedTextView: TextView = itemView.findViewById(R.id.textSyncDiffBookLastModified)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -23,17 +27,20 @@ class BookListSyncDiffAdapter (private var mBooks: MutableList<Book>): RecyclerV
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val book: Book = mBooks[position]
-        val textView = holder.titleTextView
-        textView.text = book.title
-        logger.info("onBindViewHolder pos:$position text:${textView.text}")
+        val book: DisplayMessageActivity.SyncDiffBook = mBooks[position]
+        holder.titleTextView.text = book.bookRemote?.title ?: book.bookLocal?.title
+        holder.authorsTextView.text = book.bookRemote?.authors ?: book.bookLocal?.authors
+        holder.lastModifiedTextView.text = "${dateFormat.format(book.bookRemote?.lastModified ?: Date())} vs ${dateFormat.format(book.bookLocal?.lastModified ?: Date())}"
+
+
+        logger.info("onBindViewHolder pos:$position title:${holder.titleTextView.text}")
     }
 
     override fun getItemCount(): Int {
         return mBooks.size
     }
 
-    fun replaceBooks(books: MutableList<Book>) {
+    fun replaceBooks(books: MutableList<DisplayMessageActivity.SyncDiffBook>) {
         mBooks = books
     }
 }

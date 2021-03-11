@@ -23,6 +23,7 @@ internal const val CALIBRE_CMD_Get_Library_List = "GetLibraryList"
 internal const val CALIBRE_CMD_Get_Library_Books = "GetLibraryBooks"
 internal const val CALIBRE_CMD_Get_Book = "GetBook"
 internal const val CALIBRE_CMD_Get_Book_Cover = "GetBookCover"
+internal const val CALIBRE_CMD_Show_Metadata = "ShowMetadata"
 internal const val CALIBRE_CMD_Set_Metadata = "SetMetadata"
 internal const val CALIBRE_CMD_Get_Book_File = "GetBookFile"
 
@@ -195,7 +196,7 @@ open class NetworkFragment : Fragment() {
         /**
          * Override to add special behavior for cancelled AsyncTask.
          */
-        override fun onCancelled(result: Result) {}
+        override fun onCancelled(result: Result?) {}
 
         /**
          * Given a URL, sets up a connection and gets the HTTP response body from the server.

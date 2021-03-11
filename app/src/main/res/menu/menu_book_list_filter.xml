@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/clearFilterItem"
+        android:title="Clear Filter" />
+    <item
+        android:id="@+id/seriesItemMenu"
+        android:title="Series">
+        <menu >
+            <group
+                android:id="@+id/seriesGroup"
+                android:checkableBehavior="all"></group>
+        </menu>
+    </item>
+    <item
+        android:id="@+id/tagsItemMenu"
+        android:title="Tags" >
+        <menu >
+            <group
+                android:id="@+id/tagsGroup"
+                android:checkableBehavior="all" />
+        </menu>
+    </item>
+    <item
+        android:id="@+id/formatsItemMenu"
+        android:title="Formats" >
+        <menu >
+            <group
+                android:id="@+id/formatsGroup"
+                android:checkableBehavior="all" />
+        </menu>
+    </item>
+</menu>

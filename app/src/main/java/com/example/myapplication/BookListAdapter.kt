@@ -1,10 +1,12 @@
 package com.example.myapplication
 
+import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.os.AsyncTask
+import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -13,15 +15,19 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.lifecycle.MutableLiveData
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import java.io.File
+import java.text.SimpleDateFormat
 import java.util.*
 import java.util.logging.Logger
 
 
 const val FORMAT_PROGRESS = "%.2f%%"
 
-class BookListMainLibraryAdapter(private val mainActivity: MainActivity) :
-    RecyclerView.Adapter<BookListMainLibraryAdapter.ViewHolder>() {
+class BookListAdapter(private val parentActivity: Activity) :
+    ListAdapter<Book, BookListAdapter.ViewHolder>(Book.DIFF_CALLBACK) {
 
     private val logger: Logger = Logger.getLogger("BookListAdapter")
 
@@ -29,9 +35,12 @@ class BookListMainLibraryAdapter(private val mainActivity: MainActivity) :
     var downloadingPosition: Int = 0
     var downloadingFormat: String = ""
 
+    var rowClicked = MutableLiveData<Int>()
+
     inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val coverImageView: ImageView = itemView.findViewById(R.id.imageMainLibraryBookCover)
         val titleTextView: TextView = itemView.findViewById(R.id.textMainLibraryBookTitle)
+        var lastReadTextView: TextView = itemView.findViewById(R.id.textLastRead)
         val authorTextView: TextView = itemView.findViewById(R.id.textMainLibraryBookAuthor)
         val pageCountTextView: TextView = itemView.findViewById(R.id.textMainLibraryBookPageCount)
         val progressTextView: TextView = itemView.findViewById(R.id.textMainLibraryBookProgress)
@@ -41,13 +50,21 @@ class BookListMainLibraryAdapter(private val mainActivity: MainActivity) :
         val epubProgressBar: ProgressBar = itemView.findViewById(R.id.pbEpubDownload)
 
         var formatComponents = HashMap<String, Pair<ImageView, ProgressBar>>()
+
+        var coverImageURL = ""
     }
 
     companion object {
-        private class DownloadImageFromInternet(var imageView: ImageView) :
+        val lastReadDateFormat = SimpleDateFormat(
+            "EEE, d MMM yyyy HH:mm:ss",
+            Locale.US
+        )
+
+        private class DownloadImageFromInternet(var viewHolder: ViewHolder) :
             AsyncTask<String, Void, Bitmap?>() {
+            var imageURL= ""
             override fun doInBackground(vararg urls: String): Bitmap? {
-                val imageURL = urls[0]
+                imageURL = urls[0]
                 var image: Bitmap? = null
                 try {
                     val `in` = java.net.URL(imageURL).openStream()
@@ -60,7 +77,8 @@ class BookListMainLibraryAdapter(private val mainActivity: MainActivity) :
             }
 
             override fun onPostExecute(result: Bitmap?) {
-                imageView.setImageBitmap(result)
+                if( imageURL == viewHolder.coverImageURL)
+                    viewHolder.coverImageView.setImageBitmap(result)
             }
         }
     }
@@ -77,31 +95,44 @@ class BookListMainLibraryAdapter(private val mainActivity: MainActivity) :
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val book: Book = mainActivity.mBooks[position]
+        val book: Book = getItem(position)
+
+        holder.coverImageView.setImageResource(android.R.color.transparent)
+        val coverURL = StringBuilder(256)
+        coverURL.append(BookLibrary.calibreServer)
+        coverURL.append("/get/thumb/${book.id}/${book.libraryName}")
+        holder.coverImageURL = coverURL.toString()
+        DownloadImageFromInternet(holder).execute(
+            holder.coverImageURL
+        )
+        logger.info("onBindViewHolder ${book.title} $coverURL")
 
         holder.titleTextView.text = book.title
         holder.authorTextView.text = book.authors
-        if (book.pages > 0) {
-            holder.pageCountTextView.text = book.pages.toString()
+        var maxPage = ""
+        logger.info("ReadPos: ${book.readPos}")
+
+        var lastReadDevice = book.readPos.getLastDeviceOrDefault(MainActivity.DEVICE_NAME ?: EXTRA_DEVICE_NAME_DEFAULT)
+        val readPos = book.readPos.getByDevice(lastReadDevice, EXTRA_DEVICE_NAME_DEFAULT)
+        maxPage = if (readPos.maxPage > 0) {
+            readPos.maxPage.toString()
         } else {
-            holder.pageCountTextView.text =
-                book.readPos.getByDevice(mainActivity.deviceName).maxPage.toString()
+            book.pages.toString()
         }
+
+        holder.pageCountTextView.text = if (readPos.lastReadPage > 0) {
+            "${readPos.lastReadPage} / $maxPage"
+        } else {
+            maxPage
+        }
+        holder.lastReadTextView.text = "${lastReadDateFormat.format(book.lastModified)} on $lastReadDevice"
         holder.progressTextView.apply {
-            val readPos = book.readPos.getByDevice(mainActivity.deviceName)
             val pos = readPos.getLastProgress()
-            var sb = StringBuilder()
-            var formatter = Formatter(sb)
+            val sb = StringBuilder()
+            val formatter = Formatter(sb)
             formatter.format(FORMAT_PROGRESS, pos)
             text = sb.toString()
         }
-
-        var coverURL = StringBuilder(256)
-        coverURL.append(mainActivity.findViewById<EditText>(R.id.editCalibreServer).text.toString())
-        coverURL.append("/get/thumb/${book.id}/${book.libraryName}")
-        DownloadImageFromInternet(holder.coverImageView).execute(
-            coverURL.toString()
-        )
 
         holder.pdfImageView.setImageResource(R.drawable.ic_pdf_icon)
 
@@ -114,7 +145,7 @@ class BookListMainLibraryAdapter(private val mainActivity: MainActivity) :
             } else if (book.formats.containsKey(format)) {
                 components.first.visibility = View.VISIBLE
                 components.second.visibility = View.GONE
-                if (mainActivity.isBookFormatDownloaded(book, format))
+                if (MainActivity.isBookFormatDownloaded(parentActivity.applicationContext, book, format))
                     setUnlocked(components.first)
                 else
                     setLocked(components.first)
@@ -125,22 +156,10 @@ class BookListMainLibraryAdapter(private val mainActivity: MainActivity) :
         }
 
         holder.itemView.setOnClickListener {
-            mainActivity.onBookRowClicked(position)
-        }
-        holder.itemView.setOnLongClickListener {
-            mainActivity.onBookRowLongClicked(position)
+            rowClicked.value = position
         }
 
         logger.info("onBindViewHolder pos:$position text:${book.title}")
-    }
-
-    override fun getItemCount(): Int {
-        return mainActivity.mBooks.size
-    }
-
-    fun replaceAllBooks(books: List<Book>) {
-        mainActivity.mBooks.clear()
-        mainActivity.mBooks.addAll(books)
     }
 
     fun setLocked(v: ImageView) {
@@ -165,4 +184,5 @@ class BookListMainLibraryAdapter(private val mainActivity: MainActivity) :
     fun clearDownloading() {
         downloading = false
     }
+
 }

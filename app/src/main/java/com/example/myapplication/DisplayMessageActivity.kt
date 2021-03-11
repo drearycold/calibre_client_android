@@ -8,12 +8,17 @@ import android.os.Bundle
 import android.view.View
 import android.widget.*
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.room.Room
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
+import kotlinx.coroutines.launch
+import java.text.ParsePosition
 import java.util.*
 import java.util.logging.Logger
 import kotlin.collections.ArrayList
@@ -28,18 +33,19 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
     private var cancelUpdate = false
     private var updateIndex = 0
 
+    private lateinit var db: AppDatabase
     private lateinit var networkFragment: NetworkFragment
 
-    private var mBooks = HashMap<String, ArrayList<Book>>()
-    private lateinit var mBooksSelected : ArrayList<Book>
+    private var mBooks = HashMap<String, ArrayList<SyncDiffBook>>()
+    private lateinit var mBooksSelected : ArrayList<SyncDiffBook>
     private lateinit var mBookListSyncDiffAdapter: BookListSyncDiffAdapter
 
-    private var calibreServer: String = ""
+    private lateinit var mEditCalibreServer: EditText
 
     private lateinit var mLibraryListSpinner: Spinner
 
     private lateinit var dbMetadata: AppDatabase
-    private lateinit var bookViewModel: BookViewModel
+    private lateinit var bookViewModel: BookListViewModel
 
     data class LibraryInfo (
             @SerializedName("default_library")
@@ -48,16 +54,112 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
             var libraryMap: TreeMap<String, String>
     )
 
+    data class SyncDiffBook (
+        val id: Int,
+        val bookRemote: Book?,
+        val bookLocal: Book?
+        )
+
+    class SyncDiffViewModel: ViewModel() {
+
+        fun updateFromGetLibraryBooks(result: String, activity: DisplayMessageActivity) {
+            viewModelScope.launch {
+                val gson = Gson()
+
+                val root = JsonParser.parseString(result)
+                activity.logger.info("updateFromDownload root: ${root.isJsonObject}")
+
+                val resultElement = root.asJsonObject.get("result").asJsonObject
+                val bookIds = resultElement.get("book_ids").asJsonArray
+
+                val books = TreeMap<Int, SyncDiffBook>()
+                val curLibraryName = (activity.mLibraryListSpinner.selectedItem as Library).name
+                val bookDao = activity.db.bookDao()
+                for(idAny in bookIds) {
+                    val id = idAny.asInt
+                    books[id] = SyncDiffBook(
+                        id,
+                        Book(id, curLibraryName,
+                            activity.getString(R.string.bookTitleDefault),
+                            activity.getString(R.string.bookAuthorsDefault)
+                        ),
+                        bookDao.find(id, curLibraryName)
+                    )
+                }
+
+                val dataElement = resultElement.get("data").asJsonObject
+                val bookTitles = gson.fromJson(dataElement.get("title").asJsonObject, TreeMap::class.java)
+                val bookAuthors = gson.fromJson(dataElement.get("authors").asJsonObject, TreeMap::class.java)
+                val bookTimestamps = gson.fromJson(dataElement.get("last_modified").asJsonObject, TreeMap::class.java)
+                activity.logger.info("updateFromDownload bookTitles: $bookTitles")
+
+                for((idStr,title) in bookTitles) {
+                    val id = (idStr as String).toInt()
+                    val book = books[id]!!
+                    book.bookRemote?.title = title as String
+                }
+                for((idStr,authorsAny) in bookAuthors) {
+                    val id = (idStr as String).toInt()
+                    val authors = authorsAny as ArrayList<*>
+                    if( authors.size > 1) {
+                        books[id]!!.bookRemote?.authors = authors[0] as String + ", et al."
+                    } else {
+                        books[id]!!.bookRemote?.authors = authors[0] as String
+                    }
+                }
+                for((idStr,timestampAny) in bookTimestamps) {
+                    val id = (idStr as String).toInt()
+                    val timestamp = timestampAny as Map<*,*>
+                    timestamp["v"]?.let { it as String
+                        val pp = ParsePosition(0)
+                        books[id]!!.bookRemote?.lastModified = BookListViewModel.simpleDateFormatLastModified.parse(it, pp) ?: Date()
+                        if (pp.errorIndex > 0) {
+                            pp.index = 0
+                            pp.errorIndex = 0
+                            val newV = it.replace("\\.\\d+", "")
+                            books[id]!!.bookRemote?.lastModified = BookListViewModel.simpleDateFormat.parse(newV, pp) ?: Date()
+                        }
+                    }
+                }
+
+                activity.mBooksSelected.addAll(books.values.filter {
+                    var modified = false
+                    if( it.bookLocal != null && it.bookRemote != null ) {
+                        modified = it.bookLocal.lastModified != it.bookRemote.lastModified
+                        if( modified )
+                            activity.logger.info("FILTER local ${it.bookLocal.lastModified} remote ${it.bookRemote.lastModified}")
+                    } else if( it.bookLocal != null || it.bookRemote != null ) {
+                        modified = true
+                    }
+                    modified
+                })
+                activity.logger.info("updateFromDownload mBooks: ${activity.mBooksSelected.size} ${books.values.size}")
+
+                activity.updateRVBookList()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_display_message)
 
         val message = intent.getStringExtra(EXTRA_MESSAGE)
-        calibreServer = intent.getStringExtra(CALIBRE_SERVER)!!
+
+        mEditCalibreServer = findViewById<EditText>(R.id.editCalibreServer).apply {
+            setText(intent.getStringExtra(EXTRA_CALIBRE_SERVER))
+        }
 
         logger.info("onCreate message:$message")
 
-        val libraryInfo = Gson().fromJson<LibraryInfo>(message, LibraryInfo::class.java)
+        db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java,
+            "metadata"
+        ).build()
+
+
+        val libraryInfo = Gson().fromJson(message, LibraryInfo::class.java)
 
         logger.info("onCreate libraryInfo.defaultLibrary:${libraryInfo.defaultLibrary}")
         logger.info("onCreate libraryInfo.libraryMap:${libraryInfo.libraryMap}")
@@ -69,7 +171,7 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
         }
 
         mLibraryListSpinner = findViewById<Spinner>(R.id.spSyncLibraryList)
-        ArrayAdapter<Library>(this,
+        ArrayAdapter(this,
             android.R.layout.simple_spinner_item,
             libraryList
         ).also { adapter ->
@@ -96,7 +198,7 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
             applicationContext,
             AppDatabase::class.java,
             "metadata").build()
-        bookViewModel = BookViewModel(dbMetadata.bookDao())
+        bookViewModel = BookListViewModel(dbMetadata.bookDao())
 
         val libraryViewModel = LibraryViewModel(dbMetadata.libraryDao())
         for(library in libraryList) {
@@ -119,11 +221,11 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
     }
 
     fun onSyncButton(view: View) {
-        val url = calibreServer + "/cdb/cmd/list/0?library_id=" + findViewById<Spinner>(R.id.spSyncLibraryList).selectedItem
+        val url = mEditCalibreServer.text.toString() + "/cdb/cmd/list/0?library_id=" + findViewById<Spinner>(R.id.spSyncLibraryList).selectedItem
         val args = Bundle()
         args.putString(URL_KEY, url)
         args.putString(CMD_KEY, CALIBRE_CMD_Get_Library_Books)
-        args.putString(POST_KEY, "[[\"id\",\"title\",\"authors\"],\"\",\"\",\"\",-1]")
+        args.putString(POST_KEY, "[[\"id\",\"title\",\"authors\",\"last_modified\"],\"\",\"\",\"\",-1]")
         networkFragment.arguments = args
         if (!syncing) {
             // Execute the async download.
@@ -159,59 +261,22 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
     }
 
     private fun updateFromGetLibraryBooks(result: String) {
-        val gson = Gson()
-
-        val root = JsonParser.parseString(result)
-        logger.info("updateFromDownload root: ${root.isJsonObject}")
-
-        val resultElement = root.asJsonObject.get("result").asJsonObject
-        val bookIds = resultElement.get("book_ids").asJsonArray
-
-        val books = TreeMap<Int, Book>()
-        val curLibraryName = (findViewById<Spinner>(R.id.spSyncLibraryList).selectedItem as Library).name
-        for(idAny in bookIds) {
-            val id = idAny.asInt
-            books[id] = Book(id, curLibraryName,
-                    getString(R.string.bookTitleDefault),
-                    getString(R.string.bookAuthorsDefault)
-            )
-        }
-
-        val dataElement = resultElement.get("data").asJsonObject
-        val bookTitles = gson.fromJson(dataElement.get("title").asJsonObject, TreeMap::class.java)
-        val bookAuthors = gson.fromJson(dataElement.get("authors").asJsonObject, TreeMap::class.java)
-        logger.info("updateFromDownload bookTitles: $bookTitles")
-
-
-        for((idStr,title) in bookTitles) {
-            val id = (idStr as String).toInt()
-            books[id]!!.title = title as String
-        }
-        for((idStr,authorsAny) in bookAuthors) {
-            val id = (idStr as String).toInt()
-            val authors = authorsAny as ArrayList<*>
-            if( authors.size > 1) {
-                books[id]!!.authors = authors[0] as String + ", et al."
-            } else {
-                books[id]!!.authors = authors[0] as String
-            }
-        }
-        mBooksSelected.addAll(books.values)
-        logger.info("updateFromDownload mBooks: ${mBooksSelected.size}")
-
-        updateRVBookList()
+        val viewModel : SyncDiffViewModel = ViewModelProvider(this).get(SyncDiffViewModel::class.java)
+        mBooksSelected.clear()
+        viewModel.updateFromGetLibraryBooks(result, this)
     }
 
     private fun updateOneBookFromQueue() {
         val book = mBooksSelected[updateIndex++]
-        val url = calibreServer + "/cdb/cmd/list/0?library_id=" + findViewById<Spinner>(R.id.spSyncLibraryList).selectedItem
+        val url = mEditCalibreServer.text.toString() + "/cdb/cmd/list/0?library_id=" + findViewById<Spinner>(R.id.spSyncLibraryList).selectedItem
         val args = Bundle()
         args.putString(URL_KEY, url)
         args.putString(CMD_KEY, CALIBRE_CMD_Get_Book)
         args.putString(POST_KEY, "[[\"all\"],\"\",\"\",\"id:${book.id}\",-1]")
-        networkFragment.arguments = args
+
         // Execute the async download.
         networkFragment.apply {
+            arguments = args
             startDownload()
         }
     }
@@ -228,7 +293,7 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
             updateOneBookFromQueue()
         }
 
-        bookViewModel.updateBook(result, (findViewById<Spinner>(R.id.spSyncLibraryList).selectedItem as Library).name)
+        bookViewModel.updateBook(result, (mLibraryListSpinner.selectedItem as Library).name)
 
 
     }
@@ -284,7 +349,7 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
         var intent = Intent()
         intent.putExtras(this.intent)
         mLibraryListSpinner.selectedItem?.let {
-            intent.putExtra(EXTRA_SYNCING_LIBRARY_NAME, (it as Library).name)
+            intent.putExtra(EXTRA_LIBRARY_NAME, (it as Library).name)
         }
 
         setResult(RESULT_OK, intent)
