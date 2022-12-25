@@ -30,7 +30,7 @@ class BookListSyncDiffAdapter (private var mBooks: MutableList<DisplayMessageAct
         val book: DisplayMessageActivity.SyncDiffBook = mBooks[position]
         holder.titleTextView.text = book.bookRemote?.title ?: book.bookLocal?.title
         holder.authorsTextView.text = book.bookRemote?.authors ?: book.bookLocal?.authors
-        holder.lastModifiedTextView.text = "${dateFormat.format(book.bookRemote?.lastModified ?: Date())} vs ${dateFormat.format(book.bookLocal?.lastModified ?: Date())}"
+        holder.lastModifiedTextView.text = "R ${dateFormat.format(book.bookRemote?.lastModified ?: Date())} vs L ${dateFormat.format(book.bookLocal?.lastModified ?: Date())}"
 
 
         logger.info("onBindViewHolder pos:$position title:${holder.titleTextView.text}")

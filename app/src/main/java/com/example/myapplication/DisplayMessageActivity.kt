@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkInfo
 import android.os.Bundle
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
@@ -16,6 +17,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.room.Room
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.google.gson.JsonSyntaxException
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.launch
 import java.text.ParsePosition
@@ -148,6 +150,12 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
 
         mEditCalibreServer = findViewById<EditText>(R.id.editCalibreServer).apply {
             setText(intent.getStringExtra(EXTRA_CALIBRE_SERVER))
+            setOnEditorActionListener { v, actionId, event ->
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+
+                }
+                false
+            }
         }
 
         logger.info("onCreate message:$message")
@@ -159,7 +167,17 @@ class DisplayMessageActivity : FragmentActivity(), DownloadCallback<DownloadCall
         ).build()
 
 
-        val libraryInfo = Gson().fromJson(message, LibraryInfo::class.java)
+        var libraryInfo = LibraryInfo(
+            defaultLibrary = "Default", libraryMap = TreeMap<String, String>()
+        )
+        libraryInfo.libraryMap["Default"] = "Default"
+
+        try {
+            libraryInfo = Gson().fromJson(message, LibraryInfo::class.java)
+        } catch (e: JsonSyntaxException) {
+            logger.info("parse fail: $message")
+            //return
+        }
 
         logger.info("onCreate libraryInfo.defaultLibrary:${libraryInfo.defaultLibrary}")
         logger.info("onCreate libraryInfo.libraryMap:${libraryInfo.libraryMap}")

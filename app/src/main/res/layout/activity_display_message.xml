@@ -26,6 +26,7 @@
             android:autofillHints="https://"
             android:ems="10"
             android:hint="@string/editCalibreServer"
+            android:imeOptions="actionDone"
             android:inputType="textUri" />
 
     </LinearLayout>

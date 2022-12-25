@@ -11,7 +11,10 @@ interface BookDAO {
     suspend fun findByLibrary(libraryName: String): List<Book>
 
     @Query("SELECT * FROM book WHERE lastModified >= (:lastModifiedSince) AND libraryName = (:libraryName)")
-    suspend fun findByLibraryRecent(libraryName: String, lastModifiedSince: Long): List<Book>
+    suspend fun findByLibraryRecentByTime(libraryName: String, lastModifiedSince: Long): List<Book>
+
+    @Query("SELECT * from book WHERE libraryName = (:libraryName) ORDER BY lastModified DESC LIMIT :limit")
+    suspend fun findByLibraryRecentByCount(libraryName: String, limit: Long): List<Book>
 
     @Query("SELECT * FROM book WHERE title = (:title)")
     suspend fun findByName(title: String): Book

@@ -1,18 +1,15 @@
 package com.example.myapplication
 
-import android.app.Activity
 import android.os.Bundle
 import android.util.Base64
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.recyclerview.widget.ListAdapter
-import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.internal.LinkedTreeMap
 import kotlinx.coroutines.launch
-import java.io.File
 import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.*
@@ -206,10 +203,13 @@ class BookListViewModel(private val bookDAO: BookDAO) : ViewModel() {
             logger.info("findByLibrary Start: $nanoTimeStart")
             var bookList = if (recentDay > 0) {
                 val curTime = Calendar.getInstance().time.time
-                bookDAO.findByLibraryRecent(libraryName, curTime - recentDay * 86400000L)
+                bookDAO.findByLibraryRecentByTime(libraryName, curTime - recentDay * 86400000L)
             } else {
                 bookDAO.findByLibrary(libraryName)
             }
+            if (bookList.isEmpty())
+                bookList = bookDAO.findByLibraryRecentByCount(libraryName, 20)
+
             val nanoTimeEnd = System.nanoTime()
             logger.info("findByLibrary End: $nanoTimeEnd")
             val elapsedNanoTime = nanoTimeEnd - nanoTimeStart

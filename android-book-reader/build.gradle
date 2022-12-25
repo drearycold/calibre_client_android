@@ -1,0 +1,48 @@
+apply plugin: 'com.android.library'
+apply plugin: 'com.github.axet.dxplugin'
+
+android {
+    compileSdkVersion 30
+    buildToolsVersion '30.0.2'
+
+    defaultConfig {
+        minSdkVersion 22
+        targetSdkVersion 30
+        versionCode     400
+        versionName     "1.13.21"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        multiDexEnabled true
+    }
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+    }
+    signingConfigs {
+        release {
+            storeFile file(project.findProperty('RELEASE_STORE_FILE') ?: 'none')
+            storePassword project.findProperty('RELEASE_STORE_PASSWORD')
+            keyAlias project.findProperty('RELEASE_KEY_ALIAS')
+            keyPassword project.findProperty('RELEASE_KEY_PASSWORD')
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.coordinatorlayout:coordinatorlayout:1.1.0'
+    testImplementation 'junit:junit:4.13.1'
+    implementation 'com.github.axet:android-library:1.33.6' // implementation project(':android-library')
+    implementation 'com.android.support.constraint:constraint-layout:2.0.4'
+    implementation 'com.google.android.material:material:1.2.1'
+    implementation ('com.github.axet.fbreader:library:0.1.17') { exclude group: 'org.apache.httpcomponents', module: 'httpclient' }
+    implementation 'com.github.axet:djvulibre:0.1.4'
+    implementation 'com.github.axet:pdfium:2.0.14'
+    implementation 'com.github.axet:k2pdfopt:0.1.6'
+    implementation('com.github.axet:wget:1.7.0') { exclude group: 'org.json', module: 'json' }
+    assets('com.madgag.spongycastle:bctls-jdk15on:1.58.0.0') { exclude module: 'junit' }
+}

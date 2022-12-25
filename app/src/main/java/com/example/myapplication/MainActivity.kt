@@ -317,6 +317,7 @@ class MainActivity : FragmentActivity(), DownloadCallback<DownloadCallbackData> 
         // Update your UI here based on result of download.
         when (result?.command) {
             CALIBRE_CMD_Get_Library_List -> Intent(this, DisplayMessageActivity::class.java).apply {
+                logger.warning(result?.result as String)
                 putExtra(EXTRA_MESSAGE, result?.result as String)
                 putExtra(EXTRA_CALIBRE_SERVER, BookLibrary.calibreServer)
                 startActivityForResult(this, REQUEST_SYNCING_ACTIVITY_CODE)
